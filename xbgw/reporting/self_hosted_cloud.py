@@ -5,17 +5,18 @@
 # Copyright (c) 2016 Digi International Inc. All Rights Reserved.
 
 """
-Define reporting manager for posting data points to Digi Device Cloud
+Define reporting manager for posting data points to Self Hosted Cloud
 """
 
 # pylint: disable=import-error
-import idigidata  # Provided by XBee Gateway
 import pubsub.pub
 import logging
 import re
 import threading
 import time
 import base64
+import urllib2
+from urllib import urlencode
 from collections import deque
 
 from xbgw.settings import Setting, SettingsMixin
@@ -78,7 +79,7 @@ def get_type(obj):
     return "UNKNOWN"
 
 
-class DeviceCloudReporter(SettingsMixin):
+class SelfHostedCloudReporter(SettingsMixin):
     """Reporting manager which posts data points into Device Cloud
 
     The Device Cloud reporting manager is agnostic to the actual source of
@@ -106,16 +107,19 @@ class DeviceCloudReporter(SettingsMixin):
     Available settings:
 
         * "encode serial": If set to `true`, string values will be converted to
-                           base64 encoding when uploaded to Device Cloud
+                           base64 encoding when uploaded to Self Hosted Cloud
+        * "server url": Where to post the data to
     """
 
-    def __init__(self, settings_registry, settings_binding="device cloud"):
-        logger.info("Initializing DeviceCloudReporter")
+    def __init__(self, settings_registry, settings_binding="self hosted cloud"):
+        logger.info("Initializing SelfHostedCloudReporter")
 
         settings_list = [
             # Should serial data be base64-encoded before upload?
             Setting(name="encode serial", type=bool, required=False,
-                    default_value=False)
+                    default_value=False),
+            # Where is the data going
+            Setting(name="server uri", type=str, required=True)
         ]
 
         # Necessary before calling register_settings to initialize state.
@@ -133,12 +137,12 @@ class DeviceCloudReporter(SettingsMixin):
         self._RETRY_COUNT = 3  # Will attempt upload this many times
         # Below value is for DC Free/Developer tier.  Standard tier
         # and above can change this to one second
-        self._RATE_LIMIT = 5  # seconds between uploads to DC, per DC throttles
+        self._RATE_LIMIT = 1  # seconds between uploads to DC, per DC throttles
         self._MAX_QUEUE_SIZE = 5000  # items
 
         # 249 because DC counts the header line, while we only count
         # the DataPoints, leading to an off-by-one disagreement
-        self._MAX_PER_UPLOAD = 249  # datapoints per upload
+        self._MAX_PER_UPLOAD = 5000  # datapoints per upload
 
         self._thread = threading.Thread(target=self.__thread_fn)
         self._thread.daemon = True
@@ -209,13 +213,9 @@ class DeviceCloudReporter(SettingsMixin):
                     self._work_event.clear()
 
     def _publish_stream(self):
-        # Performs an upload of all data, honoring limits
-        filename = "DataPoint/upload.csv"
-        logger.info("Uploading data to %s", filename)
-
         body = self._build_body()
 
-        self._upload(body, filename)
+        self._upload(body)
         self._last_upload = time.time()
 
     def _build_body(self):
@@ -247,13 +247,12 @@ class DeviceCloudReporter(SettingsMixin):
             count = count + 1
 
         logger.info("Upload contains %d datapoints", count)
-        upload_body = '\n'.join(lines)
-        return upload_body
+        return '\n'.join(lines)
 
-    def _upload(self, body, filename):
+    def _upload(self, body):
         loop_count = 0
         while True:
-            success, _, errmsg = idigidata.send_to_idigi(body, filename)
+            success, errmsg = self._send_to_self_hosted_cloud(body)
 
             if success:
                 # transmitted successfully
@@ -265,7 +264,7 @@ class DeviceCloudReporter(SettingsMixin):
                 # Wait to try again
                 time.sleep(self._RETRY_TIME)
             else:
-                logger.warning("Unexpected Device Cloud error, data lost: %s",
+                logger.warning("Unexpected Self Hosted Cloud error, data lost: %s",
                                errmsg)
                 break
 
@@ -273,3 +272,22 @@ class DeviceCloudReporter(SettingsMixin):
                 logger.error("Exceeded retries, data lost")
                 break
             loop_count = loop_count + 1
+
+    def _send_to_self_hosted_cloud(self, body):
+        # url_data = urlencode({"data": body})
+
+        logger.debug("Body to send %s", body)
+
+        try:
+            req = urllib2.Request(self.get_setting("server uri"), body)
+            req.add_header('Content-Type', 'text/plain')
+            response = urllib2.urlopen(req, None, 5)
+            return True, response.read()
+        except urllib2.URLError as err:
+            return False, "URLError: " + str(err)
+        except urllib2.HTTPError as err:
+            return False, "HTTPError: " + str(err)
+        except Exception as err:
+            return False, "Unknown Error: " + str(err)
+
+

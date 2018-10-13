@@ -1,6 +1,7 @@
 {
-    "devicecloud": {
-        "encode serial": true
+    "selfhostedcloud": {
+        "encode serial": true,
+        "server uri": "http://10.0.30.10"
     },
     "xbee_manager": {
         "filter_analog_duplicates": true,

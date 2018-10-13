@@ -18,7 +18,7 @@ from pubsub import pub
 
 from xbgw.xbee.manager import XBeeEventManager
 from xbgw.xbee.ddo_manager import DDOEventManager
-from xbgw.reporting.device_cloud import DeviceCloudReporter
+from xbgw.reporting.self_hosted_cloud import SelfHostedCloudReporter
 from xbgw.command.rci import RCICommandProcessor
 from xbgw.settings import SettingsRegistry
 
@@ -70,13 +70,13 @@ def main():
     # Create PubSub participants
     XBeeEventManager(settings, "xbee_manager")
     DDOEventManager()
-    dcrep = DeviceCloudReporter(settings, "devicecloud")
+    shcrep = SelfHostedCloudReporter(settings, "selfhostedcloud")
     rciproc = RCICommandProcessor()
     echo_cmd = EchoCommand()
 
     # Subscribe to all topics that XBeeEventManager publishes
     for topic in XBeeEventManager.data_topics:
-        dcrep.start_reporting(topic)
+        shcrep.start_reporting(topic)
 
     # timeout is 30 seconds by default, but that is far too slow for our
     # purposes. Set the timeout to 100 ms. (Value may be fine tuned later)
