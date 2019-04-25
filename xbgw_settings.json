@@ -1,7 +1,7 @@
 {
     "selfhostedcloud": {
         "encode serial": true,
-        "server uri": "http://10.0.30.10"
+        "server uri": "https://xbee-receiver.iot.internal.xyzhou.com"
     },
     "xbee_manager": {
         "filter_analog_duplicates": true,
